@@ -1,0 +1,107 @@
+// Huska team task & attendance management
+// Dev datasource is SQLite (zero-setup, file-based) so this runs immediately.
+// For production, switch to MySQL/Postgres (matches how Huska will be deployed):
+//   datasource db { provider = "mysql"; url = env("DATABASE_URL") }
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// Valid Role values:           ADMIN | MANAGER | WORKER
+// Valid ApprovalStatus values: PENDING | APPROVED | REJECTED
+// Valid TaskStatus values:     PENDING | IN_PROGRESS | DONE
+// Valid AttendanceStatus:      PRESENT | OUTSIDE_ZONE
+// (kept as validated strings, not native enums, so SQLite dev + MySQL prod both work)
+
+model User {
+  id               String    @id @default(uuid())
+  name             String
+  email            String    @unique
+  phone            String?
+  passwordHash     String
+  role             String    @default("WORKER")
+  approvalStatus   String    @default("PENDING")
+  isActive         Boolean   @default(true)
+  avatarColor      String    @default("#6366F1")
+  tokenVersion     Int       @default(0)
+
+  approvedById     String?
+  approvedBy       User?     @relation("Approvals", fields: [approvedById], references: [id])
+  approvedUsers    User[]    @relation("Approvals")
+  approvedAt       DateTime?
+  rejectionReason  String?
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  tasksCreated     Task[]    @relation("TaskCreatedBy")
+  tasksAssigned    Task[]    @relation("TaskAssignedTo")
+  attendances      Attendance[]
+
+  @@index([role])
+  @@index([approvalStatus])
+}
+
+model Task {
+  id            String    @id @default(uuid())
+  title         String
+  description   String?
+  status        String    @default("PENDING")
+  priority      String    @default("NORMAL")
+  dueDate       DateTime?
+
+  createdById   String
+  createdBy     User      @relation("TaskCreatedBy", fields: [createdById], references: [id])
+
+  assignedToId  String
+  assignedTo    User      @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([assignedToId])
+  @@index([status])
+}
+
+model AttendanceZone {
+  id           String   @id @default(uuid())
+  name         String
+  latitude     Float
+  longitude    Float
+  radiusMeters Int      @default(100)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  attendances  Attendance[]
+}
+
+model Attendance {
+  id             String    @id @default(uuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+
+  date           String    // YYYY-MM-DD, one row per user per day
+  checkInAt      DateTime  @default(now())
+  checkOutAt     DateTime?
+
+  latitude       Float
+  longitude      Float
+  distanceMeters Float?
+  status         String    @default("PRESENT")
+
+  zoneId         String?
+  zone           AttendanceZone? @relation(fields: [zoneId], references: [id])
+
+  note           String?
+  createdAt      DateTime  @default(now())
+
+  @@unique([userId, date])
+  @@index([date])
+}
